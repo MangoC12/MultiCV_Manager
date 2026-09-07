@@ -15,6 +15,9 @@ const stripHtml = (value: string) => {
   return element.textContent ?? "";
 };
 
+const hasRichTextContent = (value: string) =>
+  stripHtml(value).replace(/&nbsp;/gi, " ").replace(/\u00a0/g, " ").trim().length > 0;
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -79,15 +82,31 @@ function ExperienceParagraph({
 
 function RichTextBulletEditor({
   value,
-  onChange
+  visible,
+  onChange,
+  onToggleVisibility,
+  onDelete
 }: {
   value: string;
+  visible: boolean;
   onChange: (value: string) => void;
+  onToggleVisibility: () => void;
+  onDelete: () => void;
 }) {
+  const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="richBulletEditor">
+    <div className={`richBulletEditor ${visible ? "" : "bulletHidden"}`}>
+      <button
+        className={`fieldVisibilityButton bulletVisibilityButton ${visible ? "visible" : "hidden"}`}
+        type="button"
+        aria-label={`${visible ? t.hideInPreview : t.showInPreview} Bullet`}
+        title={visible ? t.hideInPreview : t.showInPreview}
+        onClick={onToggleVisibility}
+      >
+        <span className="eyeIcon" aria-hidden="true" />
+      </button>
       <div
         ref={editorRef}
         className="richBulletInput"
@@ -103,6 +122,15 @@ function RichTextBulletEditor({
         }}
         suppressContentEditableWarning
       />
+      <button
+        className="bulletDeleteButton"
+        type="button"
+        aria-label={`${t.delete} Bullet`}
+        title={`${t.delete} Bullet`}
+        onClick={onDelete}
+      >
+        <span aria-hidden="true">×</span>
+      </button>
     </div>
   );
 }
@@ -201,12 +229,18 @@ function SortableItem({
   const toggleResumeItem = useResumeStore((s) => s.toggleResumeItem);
   const removeResumeItem = useResumeStore((s) => s.removeResumeItem);
   const updateBullet = useResumeStore((s) => s.updateBullet);
+  const addBullet = useResumeStore((s) => s.addBullet);
+  const deleteBullet = useResumeStore((s) => s.deleteBullet);
+  const toggleResumeItemBullet = useResumeStore((s) => s.toggleResumeItemBullet);
   if (!exp) return null;
   const selectedVersion = exp.versions.find((version) => version.id === item.versionId) ?? exp.versions[0];
   const date = [exp.startDate, exp.endDate].filter(Boolean).join(" - ");
   const paragraphHeading = [exp.organization, exp.title, date].filter(Boolean).join(" | ");
+  const visibleBullets = selectedVersion?.bullets.filter(
+    (bullet) => !(item.hiddenBulletIds ?? []).includes(bullet.id) && hasRichTextContent(bullet.text)
+  ) ?? [];
   const paragraphText = selectedVersion
-    ? buildExperienceParagraphText(exp.organization, exp.title, exp.startDate, exp.endDate, selectedVersion.bullets)
+    ? buildExperienceParagraphText(exp.organization, exp.title, exp.startDate, exp.endDate, visibleBullets)
     : "";
   const copyParagraph = async () => {
     if (!paragraphText) return;
@@ -214,7 +248,7 @@ function SortableItem({
       const paragraphHtml = `
         <div>
           ${paragraphHeading ? `<p><strong>${escapeHtml(paragraphHeading)}</strong></p>` : ""}
-          ${selectedVersion.bullets.map((bullet, bulletIndex) => (
+          ${visibleBullets.map((bullet, bulletIndex) => (
             `<p><span>${bulletIndex + 1}. </span><span>${bullet.text}</span></p>`
           )).join("")}
         </div>
@@ -281,10 +315,17 @@ function SortableItem({
                   <RichTextBulletEditor
                     key={bullet.id}
                     value={bullet.text}
+                    visible={!(item.hiddenBulletIds ?? []).includes(bullet.id)}
                     onChange={(text) => updateBullet(exp.id, selectedVersion.id, bullet.id, text)}
+                    onToggleVisibility={() => toggleResumeItemBullet(sectionId, item.id, bullet.id)}
+                    onDelete={() => deleteBullet(exp.id, selectedVersion.id, bullet.id)}
                   />
                 ))}
+                {selectedVersion.bullets.length === 0 ? <div className="emptyState">{t.noBullets}</div> : null}
               </div>
+              <button className="addLineButton builderAddBulletButton" type="button" onClick={() => addBullet(exp.id, selectedVersion.id)}>
+                {t.addBullet}
+              </button>
             </div>
           ) : (
             <div className="builderParagraphView">
@@ -296,7 +337,7 @@ function SortableItem({
               </div>
               <ExperienceParagraph
                 heading={paragraphHeading}
-                bullets={selectedVersion.bullets}
+                bullets={visibleBullets}
                 onBulletChange={(bulletId, text) => updateBullet(exp.id, selectedVersion.id, bulletId, text)}
               />
             </div>

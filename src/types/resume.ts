@@ -86,6 +86,7 @@ export interface ResumeItem {
   experienceId: string;
   versionId: string;
   visible: boolean;
+  hiddenBulletIds?: string[];
 }
 
 export interface ResumeSection {

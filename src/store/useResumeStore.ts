@@ -92,6 +92,7 @@ type Store = {
   reorderBullets: (experienceId: string, versionId: string, from: number, to: number) => void;
   setVersion: (sectionId: string, itemId: string, versionId: string) => void;
   toggleResumeItem: (sectionId: string, itemId: string) => void;
+  toggleResumeItemBullet: (sectionId: string, itemId: string, bulletId: string) => void;
   removeResumeItem: (sectionId: string, itemId: string) => void;
   setResumeTemplate: (templateId: ResumeTemplateId) => void;
   setResumeStyle: (patch: Partial<ResumeStyleSettings>) => void;
@@ -721,7 +722,7 @@ export const useResumeStore = create<Store>()(
                 ? {
                     ...section,
                     items: section.items.map((item) =>
-                      item.id === itemId ? { ...item, versionId } : item
+                      item.id === itemId ? { ...item, versionId, hiddenBulletIds: [] } : item
                     )
                   }
                 : section
@@ -739,6 +740,29 @@ export const useResumeStore = create<Store>()(
                     items: section.items.map((item) =>
                       item.id === itemId ? { ...item, visible: !item.visible } : item
                     )
+                  }
+                : section
+            )
+          }
+        })),
+      toggleResumeItemBullet: (sectionId, itemId, bulletId) =>
+        set((state) => ({
+          resume: {
+            ...state.resume,
+            sections: state.resume.sections.map((section) =>
+              section.id === sectionId
+                ? {
+                    ...section,
+                    items: section.items.map((item) => {
+                      if (item.id !== itemId) return item;
+                      const hiddenBulletIds = item.hiddenBulletIds ?? [];
+                      return {
+                        ...item,
+                        hiddenBulletIds: hiddenBulletIds.includes(bulletId)
+                          ? hiddenBulletIds.filter((id) => id !== bulletId)
+                          : [...hiddenBulletIds, bulletId]
+                      };
+                    })
                   }
                 : section
             )

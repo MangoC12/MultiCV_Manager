@@ -9,6 +9,9 @@ import { useEditorUiStore } from "@/store/useEditorUiStore";
 import { useResumeStore } from "@/store/useResumeStore";
 import type { ProfileFieldKey, ResumeTemplateId } from "@/types/resume";
 
+const hasRichTextContent = (value: string) =>
+  value.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/\u00a0/g, " ").trim().length > 0;
+
 const formatChineseName = (name: string) => {
   const trimmed = name.trim();
   if (/^[\u4e00-\u9fa5]{2,4}$/.test(trimmed)) return trimmed.split("").join("　");
@@ -208,6 +211,14 @@ export function ResumePreview() {
             const visibleItems = section.items.filter((item) => item.visible);
             const isSkillsSection = section.category === "custom";
             if (isSkillsSection && visibleItems.length === 0) return null;
+            const hasSkillsContent = !isSkillsSection || visibleItems.some((item) => {
+              const exp = experiences.find((entry) => entry.id === item.experienceId);
+              const version = exp?.versions.find((entry) => entry.id === item.versionId);
+              return version?.bullets.some((bullet) =>
+                !(item.hiddenBulletIds ?? []).includes(bullet.id) && hasRichTextContent(bullet.text)
+              );
+            });
+            if (!hasSkillsContent) return null;
 
             return (
               <section key={section.id} className="resumeSection">
@@ -216,6 +227,9 @@ export function ResumePreview() {
                 const exp = experiences.find((x) => x.id === item.experienceId);
                 const version = exp?.versions.find((x) => x.id === item.versionId);
                 if (!exp || !version) return null;
+                const visibleBullets = version.bullets.filter((bullet) =>
+                  !(item.hiddenBulletIds ?? []).includes(bullet.id) && hasRichTextContent(bullet.text)
+                );
                 return (
                   <div className={`resumeEntry ${isSkillsSection ? "skillsResumeEntry" : ""}`} key={item.id}>
                     {!isSkillsSection ? (
@@ -224,9 +238,11 @@ export function ResumePreview() {
                         <div className="entryDate">{exp.startDate} — {exp.endDate}</div>
                       </div>
                     ) : null}
-                    <ul>{version.bullets.map((bullet) => (
-                      <li key={bullet.id} dangerouslySetInnerHTML={{ __html: bullet.text }} />
-                    ))}</ul>
+                    {visibleBullets.length > 0 ? (
+                      <ul>{visibleBullets.map((bullet) => (
+                        <li key={bullet.id} dangerouslySetInnerHTML={{ __html: bullet.text }} />
+                      ))}</ul>
+                    ) : null}
                     {resumeTemplateId === "chinese-compact" && section.category === "project" && index < visibleItems.length - 1 ? (
                       <div className="projectDivider" />
                     ) : null}
