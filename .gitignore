@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+.next/
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+*.multicv.json
+private-data/
+personal-data/
