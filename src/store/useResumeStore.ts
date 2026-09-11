@@ -105,6 +105,7 @@ type Store = {
   updateSectionTitle: (sectionId: string, title: string) => void;
   moveSection: (sectionId: string, direction: "up" | "down") => void;
   reorderItems: (sectionId: string, from: number, to: number) => void;
+  moveResumeItem: (sourceSectionId: string, targetSectionId: string, itemId: string, targetIndex: number) => void;
   sortSectionByDate: (sectionId: string) => void;
   createTargetedResumeConfiguration: (
     name: string,
@@ -926,6 +927,36 @@ export const useResumeStore = create<Store>()(
             )
           }
         })),
+      moveResumeItem: (sourceSectionId, targetSectionId, itemId, targetIndex) =>
+        set((state) => {
+          if (sourceSectionId === targetSectionId) return state;
+          const sourceSection = state.resume.sections.find((section) => section.id === sourceSectionId);
+          const targetSection = state.resume.sections.find((section) => section.id === targetSectionId);
+          const movingItem = sourceSection?.items.find((item) => item.id === itemId);
+          if (!sourceSection || !targetSection || !movingItem) return state;
+
+          const insertAt = Math.max(0, Math.min(targetIndex, targetSection.items.length));
+          return {
+            resume: {
+              ...state.resume,
+              sections: state.resume.sections.map((section) => {
+                if (section.id === sourceSectionId) {
+                  return {
+                    ...section,
+                    sortMode: "manual",
+                    items: section.items.filter((item) => item.id !== itemId)
+                  };
+                }
+                if (section.id === targetSectionId) {
+                  const items = [...section.items];
+                  items.splice(insertAt, 0, movingItem);
+                  return { ...section, sortMode: "manual", items };
+                }
+                return section;
+              })
+            }
+          };
+        }),
       sortSectionByDate: (sectionId) => {
         const experiences = get().experiences;
         set((state) => ({

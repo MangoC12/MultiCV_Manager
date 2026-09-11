@@ -81,13 +81,17 @@ function ExperienceParagraph({
 }
 
 function RichTextBulletEditor({
-  value,
+  bullet,
+  index,
+  group,
   visible,
   onChange,
   onToggleVisibility,
   onDelete
 }: {
-  value: string;
+  bullet: ExperienceVersion["bullets"][number];
+  index: number;
+  group: string;
   visible: boolean;
   onChange: (value: string) => void;
   onToggleVisibility: () => void;
@@ -95,9 +99,23 @@ function RichTextBulletEditor({
 }) {
   const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
+  const { ref: setNodeRef, handleRef: setHandleRef, isDragging } = useSortable({
+    id: bullet.id,
+    index,
+    group
+  });
 
   return (
-    <div className={`richBulletEditor ${visible ? "" : "bulletHidden"}`}>
+    <div ref={setNodeRef} className={`richBulletEditor ${visible ? "" : "bulletHidden"} ${isDragging ? "dragging" : ""}`}>
+      <button
+        ref={setHandleRef}
+        className="dragHandle builderBulletDrag"
+        type="button"
+        aria-label={t.dragBulletLabel}
+        title={t.dragBulletLabel}
+      >
+        ⋮⋮
+      </button>
       <button
         className={`fieldVisibilityButton bulletVisibilityButton ${visible ? "visible" : "hidden"}`}
         type="button"
@@ -112,7 +130,7 @@ function RichTextBulletEditor({
         className="richBulletInput"
         contentEditable
         data-rich-editor="true"
-        dangerouslySetInnerHTML={{ __html: value }}
+        dangerouslySetInnerHTML={{ __html: bullet.text }}
         onInput={(event) => onChange(event.currentTarget.innerHTML)}
         onPaste={(event) => {
           event.preventDefault();
@@ -231,6 +249,7 @@ function SortableItem({
   const updateBullet = useResumeStore((s) => s.updateBullet);
   const addBullet = useResumeStore((s) => s.addBullet);
   const deleteBullet = useResumeStore((s) => s.deleteBullet);
+  const reorderBullets = useResumeStore((s) => s.reorderBullets);
   const toggleResumeItemBullet = useResumeStore((s) => s.toggleResumeItemBullet);
   if (!exp) return null;
   const selectedVersion = exp.versions.find((version) => version.id === item.versionId) ?? exp.versions[0];
@@ -242,6 +261,7 @@ function SortableItem({
   const paragraphText = selectedVersion
     ? buildExperienceParagraphText(exp.organization, exp.title, exp.startDate, exp.endDate, visibleBullets)
     : "";
+  const bulletGroup = selectedVersion ? `builder-bullets-${item.id}-${selectedVersion.id}` : "";
   const copyParagraph = async () => {
     if (!paragraphText) return;
     if (selectedVersion && typeof ClipboardItem !== "undefined") {
@@ -310,19 +330,31 @@ function SortableItem({
                 <strong>{t.editResumeBullets}</strong>
                 <span>{t.richTextHint}</span>
               </div>
-              <div className="builderBulletEditors">
-                {selectedVersion.bullets.map((bullet) => (
-                  <RichTextBulletEditor
-                    key={bullet.id}
-                    value={bullet.text}
-                    visible={!(item.hiddenBulletIds ?? []).includes(bullet.id)}
-                    onChange={(text) => updateBullet(exp.id, selectedVersion.id, bullet.id, text)}
-                    onToggleVisibility={() => toggleResumeItemBullet(sectionId, item.id, bullet.id)}
-                    onDelete={() => deleteBullet(exp.id, selectedVersion.id, bullet.id)}
-                  />
-                ))}
-                {selectedVersion.bullets.length === 0 ? <div className="emptyState">{t.noBullets}</div> : null}
-              </div>
+              <DragDropProvider onDragEnd={(event) => {
+                if (event.canceled) return;
+                const source = event.operation.source;
+                const target = event.operation.target;
+                if (!source || !target || !isSortable(source) || !isSortable(target)) return;
+                const sourceGroup = source.initialGroup ?? source.group;
+                if (sourceGroup !== target.group || source.initialIndex === target.index) return;
+                reorderBullets(exp.id, selectedVersion.id, source.initialIndex, target.index);
+              }}>
+                <div className="builderBulletEditors">
+                  {selectedVersion.bullets.map((bullet, index) => (
+                    <RichTextBulletEditor
+                      key={bullet.id}
+                      bullet={bullet}
+                      index={index}
+                      group={bulletGroup}
+                      visible={!(item.hiddenBulletIds ?? []).includes(bullet.id)}
+                      onChange={(text) => updateBullet(exp.id, selectedVersion.id, bullet.id, text)}
+                      onToggleVisibility={() => toggleResumeItemBullet(sectionId, item.id, bullet.id)}
+                      onDelete={() => deleteBullet(exp.id, selectedVersion.id, bullet.id)}
+                    />
+                  ))}
+                  {selectedVersion.bullets.length === 0 ? <div className="emptyState">{t.noBullets}</div> : null}
+                </div>
+              </DragDropProvider>
               <button className="addLineButton builderAddBulletButton" type="button" onClick={() => addBullet(exp.id, selectedVersion.id)}>
                 {t.addBullet}
               </button>
@@ -352,6 +384,7 @@ export function ResumeBuilder({ headerAction }: { headerAction?: ReactNode }) {
   const { t } = useI18n();
   const resume = useResumeStore((s) => s.resume);
   const reorder = useResumeStore((s) => s.reorderItems);
+  const moveResumeItem = useResumeStore((s) => s.moveResumeItem);
   const sortByDate = useResumeStore((s) => s.sortSectionByDate);
   const updateSectionTitle = useResumeStore((s) => s.updateSectionTitle);
   const moveSection = useResumeStore((s) => s.moveSection);
@@ -384,8 +417,22 @@ export function ResumeBuilder({ headerAction }: { headerAction?: ReactNode }) {
         const source = event.operation.source;
         const target = event.operation.target;
         if (!source || !target || !isSortable(source) || !isSortable(target)) return;
-        if (source.group !== target.group || source.index === target.index) return;
-        reorder(String(source.group), source.index, target.index);
+        const sourceGroup = source.initialGroup ?? source.group;
+        const targetGroup = target.group;
+        if (sourceGroup == null || targetGroup == null) return;
+        if (sourceGroup === targetGroup) {
+          if (source.initialIndex !== target.index) {
+            reorder(String(sourceGroup), source.initialIndex, target.index);
+          }
+          return;
+        }
+        const sourceSectionId = String(sourceGroup);
+        const targetSectionId = String(targetGroup);
+        const itemId = String(source.id);
+        const targetIndex = target.index;
+        window.requestAnimationFrame(() => {
+          moveResumeItem(sourceSectionId, targetSectionId, itemId, targetIndex);
+        });
       }}>
         <div className="sectionStack">
           {visibleSections.map((section, sectionIndex) => (

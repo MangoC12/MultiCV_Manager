@@ -211,6 +211,7 @@ function TagEditor({ experience, version }: { experience: Experience; version: E
 function VersionBody({ experience, version }: { experience: Experience; version: ExperienceVersion }) {
   const { t } = useI18n();
   const addBullet = useResumeStore((s) => s.addBullet);
+  const reorderBullets = useResumeStore((s) => s.reorderBullets);
   const replaceVersionBullets = useResumeStore((s) => s.replaceVersionBullets);
   const [viewMode, setViewMode] = useState<"bullet" | "paragraph">("bullet");
   const [paragraphText, setParagraphText] = useState(() => bulletsToParagraph(version));
@@ -240,12 +241,22 @@ function VersionBody({ experience, version }: { experience: Experience; version:
       </div>
       {viewMode === "bullet" ? (
         <>
-          <div className="bulletStack">
-            {version.bullets.map((bullet, index) => (
-              <BulletRow key={bullet.id} experienceId={experience.id} version={version} bullet={bullet} index={index} />
-            ))}
-            {version.bullets.length === 0 ? <div className="emptyState">{t.noBullets}</div> : null}
-          </div>
+          <DragDropProvider onDragEnd={(event) => {
+            if (event.canceled) return;
+            const source = event.operation.source;
+            const target = event.operation.target;
+            if (!source || !target || !isSortable(source) || !isSortable(target)) return;
+            const sourceGroup = source.initialGroup ?? source.group;
+            if (sourceGroup !== version.id || target.group !== version.id || source.initialIndex === target.index) return;
+            reorderBullets(experience.id, version.id, source.initialIndex, target.index);
+          }}>
+            <div className="bulletStack libraryCardBulletStack">
+              {version.bullets.map((bullet, index) => (
+                <BulletRow key={bullet.id} experienceId={experience.id} version={version} bullet={bullet} index={index} />
+              ))}
+              {version.bullets.length === 0 ? <div className="emptyState">{t.noBullets}</div> : null}
+            </div>
+          </DragDropProvider>
           <button className="addLineButton" onClick={() => addBullet(experience.id, version.id)}>
             {t.addBullet}
           </button>
@@ -508,7 +519,6 @@ export function ExperienceLibrary() {
   const { t } = useI18n();
   const experiences = useResumeStore((s) => s.experiences);
   const profile = useResumeStore((s) => s.profile);
-  const reorderBullets = useResumeStore((s) => s.reorderBullets);
   const reorderExperiences = useResumeStore((s) => s.reorderExperiences);
   const [query, setQuery] = useState("");
   const [isAutoSorted, setIsAutoSorted] = useState(true);
@@ -563,15 +573,12 @@ export function ExperienceLibrary() {
           const source = event.operation.source;
           const target = event.operation.target;
           if (!source || !target || !isSortable(source) || !isSortable(target)) return;
-          if (source.group !== target.group || source.index === target.index) return;
-          if (source.group === "content-experiences") {
+          const sourceGroup = source.initialGroup ?? source.group;
+          if (sourceGroup !== "content-experiences" || target.group !== "content-experiences") return;
+          if (source.initialIndex !== target.index) {
             setIsAutoSorted(false);
-            reorderExperiences(projects.map((item) => item.id), source.index, target.index);
-            return;
+            reorderExperiences(projects.map((item) => item.id), source.initialIndex, target.index);
           }
-          const experience = experiences.find((item) => item.versions.some((version) => version.id === source.group));
-          if (!experience) return;
-          reorderBullets(experience.id, String(source.group), source.index, target.index);
         }}
       >
         <div className="contentExperienceList">
